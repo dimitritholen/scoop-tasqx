@@ -1,0 +1,35 @@
+# The only reading the manifest ever gets: it is generated per tag and
+# reviewed by nobody, so this runs on every branch before a merge publishes it
+# to the branch users add as a bucket. Not a schema lint — a real install on a
+# real Windows runner, followed by actually running what the shim points at.
+name: scoop
+on:
+  pull_request:
+    paths: ["bucket/**"]
+  push:
+    branches: [main]
+    paths: ["bucket/**"]
+jobs:
+  install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install scoop, install the manifest, prove the shim runs
+        shell: powershell
+        run: |
+          # Runners run elevated, which the stock installer refuses without
+          # the flag; downloading it first is how the flag gets passed.
+          irm get.scoop.sh -OutFile install-scoop.ps1
+          .\install-scoop.ps1 -RunAsAdmin
+          $env:Path = "$env:USERPROFILE\scoop\shims;$env:Path"
+
+          scoop install "$env:GITHUB_WORKSPACE\bucket\tasqx.json"
+
+          # The shim is the reason the manifest exists: run the installed
+          # binary against a store of its own, so the test never touches (or
+          # creates) a real one.
+          $env:TASQX_DB = "$env:RUNNER_TEMP\tasks.db"
+          tasqx --version
+          tasqx init work
+          $out = tasqx add Buy milk
+          if ("$out" -notmatch "Buy milk") { throw "add did not echo the task: $out" }
